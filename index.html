@@ -2,8 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>HCE Móvil Asistida por IA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HCE Móvil - Asistente IA</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0284c7">
+  
+  <!-- Librería jsPDF para generación de PDFs en el cliente -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
   <style>
     :root {
       --primary: #0284c7;
@@ -12,6 +18,7 @@
       --card: #ffffff;
       --text: #0f172a;
       --danger: #ef4444;
+      --success: #10b981;
     }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; }
     body { background-color: var(--bg); color: var(--text); padding: 15px; }
@@ -19,13 +26,14 @@
     .card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 15px; }
     h2, h3 { margin-bottom: 15px; }
     .hidden { display: none !important; }
-    input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
-    button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
+    input, select, button, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
+    button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; }
     button:active { background: var(--primary-dark); }
     .btn-danger { background: var(--danger); }
+    .btn-success { background: var(--success); }
     .timer { font-size: 28px; font-weight: bold; text-align: center; color: var(--danger); margin: 10px 0; }
     .preview-img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; margin-top: 10px; }
-    #resumenOutput { white-space: pre-wrap; background: #f1f5f9; padding: 12px; border-radius: 8px; font-size: 14px; max-height: 250px; overflow-y: auto; }
+    #resumenOutput { white-space: pre-wrap; background: #f1f5f9; padding: 12px; border-radius: 8px; font-size: 14px; max-height: 250px; overflow-y: auto; border: 1px solid #e2e8f0; }
   </style>
 </head>
 <body>
@@ -34,13 +42,14 @@
 
   <!-- 1. PANTALLA DE LOGIN -->
   <div id="loginScreen" class="card">
-    <h2>Inicio de Sesión Médico</h2>
+    <h2>HCE Móvil IA</h2>
+    <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">Inicia sesión con tu cuenta profesional</p>
     <input type="email" id="loginEmail" placeholder="Correo electrónico" value="dr.gomez@clinica.com">
     <input type="password" id="loginPass" placeholder="Contraseña" value="123456">
-    <button onclick="iniciarSesion()">Ingresar</button>
+    <button onclick="iniciarSesion()">Ingresar al Sistema</button>
   </div>
 
-  <!-- 2. PANTALLA PRINCIPAL (CONSULTA) -->
+  <!-- 2. PANTALLA PRINCIPAL (CONSULTA MÉDICA) -->
   <div id="appScreen" class="card hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <div>
@@ -50,19 +59,24 @@
       <button onclick="cerrarSesion()" style="width:auto; padding:6px 12px; font-size:12px;" class="btn-danger">Salir</button>
     </div>
 
+    <!-- Clave API de Gemini (Configuración rápida) -->
+    <div style="margin-bottom: 15px;">
+      <input type="password" id="apiKeyInput" placeholder="Clave API de Gemini (AI Studio)" style="font-size: 12px; padding: 8px;">
+    </div>
+
     <hr style="margin-bottom:15px; border:none; border-top:1px solid #e2e8f0;">
 
     <!-- Módulo de Grabación de Audio -->
     <div style="text-align:center;">
-      <h3>Grabación de Consulta (10 min)</h3>
+      <h3>Grabación de Consulta</h3>
       <div id="recordingTimer" class="timer hidden">00:00</div>
-      <button id="btnStartRecord" onclick="iniciarGrabacion()">🎙️ Iniciar Grabación</button>
+      <button id="btnStartRecord" onclick="iniciarGrabacion()">🎙️ Iniciar Grabación de Consulta</button>
       <button id="btnStopRecord" onclick="detenerGrabacion()" class="btn-danger hidden">⏹️ Detener y Procesar con IA</button>
     </div>
 
-    <!-- Módulo de Captura de Fotos -->
+    <!-- Módulo de Captura de Fotos / Estudios -->
     <div style="margin-top:20px;">
-      <h3>Adjuntar Foto / Estudio</h3>
+      <h3>Adjuntar Estudio / Foto</h3>
       <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="procesarImagen(event)">
       <img id="imgPreview" class="preview-img hidden" alt="Vista previa">
       <small id="imgInfo" style="color:#64748b;"></small>
@@ -70,26 +84,29 @@
 
     <!-- Módulo de Resultados de la IA -->
     <div id="resultSection" class="hidden" style="margin-top:20px;">
-      <h3>Resumen Estructurado (IA)</h3>
-      <div id="resumenOutput">Procesando audio...</div>
-      <button style="margin-top:10px; background:#10b981;" onclick="generarDocumentoPDF()">📄 Generar Receta / Orden en PDF</button>
+      <h3>Resumen Clínico (IA)</h3>
+      <div id="resumenOutput">Esperando audio...</div>
+      
+      <button style="margin-top:15px;" class="btn-success" onclick="generarDocumentoPDF()">📄 Generar Receta / Orden Médica (PDF)</button>
     </div>
   </div>
 
 </div>
 
 <script>
-  // SIMULACIÓN DE BASE DE DATOS DE USUARIOS Y PLANTILLAS
+  // BD DE PRUEBA (Modificable según usuario)
   const usuariosDB = {
     "dr.gomez@clinica.com": {
       nombre: "Dr. Juan Gómez",
       especialidad: "Pediatría",
-      prompt: "Extrae: Acompañante, Lactancia/Alimentación, Curvas de peso/talla dictadas, Vacunas, Examen pediátrico, Dosis por kg y Pautas de alarma."
+      matricula: "MP-48201",
+      prompt: "Extrae: Acompañante, Alimentación/Lactancia, Curvas de crecimiento dictadas, Vacunas, Examen físico pediátrico, Diagnóstico y Dosis prescritas."
     },
     "dra.martinez@clinica.com": {
       nombre: "Dra. María Martínez",
       especialidad: "Odontología",
-      prompt: "Extrae: Piezas dentales afectadas, Sintomatología, Procedimiento realizado en sillón y Plan de tratamiento."
+      matricula: "MN-12904",
+      prompt: "Extrae: Piezas dentales afectadas, Motivo de consulta, Sintomatología, Procedimiento en sillón y Plan de tratamiento."
     }
   };
 
@@ -98,18 +115,19 @@
   let audioChunks = [];
   let timerInterval;
   let segundos = 0;
+  let imagenComprimidaBase64 = null;
 
-  // 1. GESTIÓN DE SESIÓN
+  // 1. INICIO DE SESIÓN
   function iniciarSesion() {
     const email = document.getElementById('loginEmail').value;
     if (usuariosDB[email]) {
       usuarioActivo = usuariosDB[email];
       document.getElementById('userGreeting').innerText = usuarioActivo.nombre;
-      document.getElementById('userSpecialty').innerText = `Especialidad: ${usuarioActivo.especialidad}`;
+      document.getElementById('userSpecialty').innerText = `Especialidad: ${usuarioActivo.especialidad} (${usuarioActivo.matricula})`;
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('appScreen').classList.remove('hidden');
     } else {
-      alert("Usuario no encontrado. Prueba con: dr.gomez@clinica.com");
+      alert("Usuario no registrado. Usa: dr.gomez@clinica.com");
     }
   }
 
@@ -119,7 +137,7 @@
     document.getElementById('appScreen').classList.add('hidden');
   }
 
-  // 2. CAPTURA Y GRABACIÓN DE AUDIO TEMPORAL
+  // 2. GRABACIÓN DE AUDIO TEMPORAL
   async function iniciarGrabacion() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -131,7 +149,6 @@
 
       mediaRecorder.start();
       
-      // UI Updates
       document.getElementById('btnStartRecord').classList.add('hidden');
       document.getElementById('btnStopRecord').classList.remove('hidden');
       document.getElementById('recordingTimer').classList.remove('hidden');
@@ -157,26 +174,66 @@
     document.getElementById('recordingTimer').classList.add('hidden');
   }
 
-  // 3. ENVÍO DEL AUDIO + PROMPT DE ESPECIALIDAD A LA IA
-  function procesarAudioConIA() {
-    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+  // 3. ENVÍO REAL DEL AUDIO A GEMINI 2.5 FLASH API
+  async function procesarAudioConIA() {
+    const apiKey = document.getElementById('apiKeyInput').value.trim();
+    const resumenOutput = document.getElementById('resumenOutput');
     document.getElementById('resultSection').classList.remove('hidden');
-    document.getElementById('resumenOutput').innerText = "Enviando audio temporal a la IA...\nAplicando plantilla de: " + usuarioActivo.especialidad;
 
-    // SIMULACIÓN DE RESPUESTA DE LA API (Gemini Flash)
-    setTimeout(() => {
-      document.getElementById('resumenOutput').innerText = 
-        `=== RESUMEN DE CONSULTA (${usuarioActivo.especialidad.toUpperCase()}) ===\n\n` +
-        `• Paciente: Mateo Pérez (4 años)\n` +
-        `• Motivo: Fiebre y tos de 48 hs de evolución.\n` +
-        `• Examen Físico: Faringe congestiva. Auscultación pulmonar normal.\n` +
-        `• Diagnóstico: Cuadro viral de vías aéreas superiores.\n` +
-        `• Indicaciones: Paracetamol 120mg/5ml (3.5 ml cada 8 hs si hay fiebre).\n` +
-        `• Pautas de Alarma: Consultar si presenta dificultad para respirar o fiebre > 39°C.`;
-    }, 2500);
+    if (!apiKey) {
+      resumenOutput.innerText = "⚠️ Ingrese su API Key de Google AI Studio arriba para procesar con IA.";
+      return;
+    }
+
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    resumenOutput.innerText = `⏳ Procesando audio de la consulta con Gemini 2.5 Flash...\nAplicando perfil: ${usuarioActivo.especialidad}`;
+
+    try {
+      const base64Audio = await blobToBase64(audioBlob);
+      const audioDataOnly = base64Audio.split(',')[1];
+
+      const promptTexto = `Eres un asistente médico clínico. Escucha la siguiente consulta médica y redacta un resumen estructurado.
+Especialidad médica: ${usuarioActivo.especialidad}
+Parámetros a extraer: ${usuarioActivo.prompt}
+
+Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen Físico, Diagnóstico e Indicaciones.`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: promptTexto },
+              { inline_data: { mime_type: "audio/webm", data: audioDataOnly } }
+            ]
+          }]
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.candidates && data.candidates[0].content.parts[0].text) {
+        resumenOutput.innerText = data.candidates[0].content.parts[0].text;
+      } else {
+        resumenOutput.innerText = "❌ Error en el procesamiento de la IA. Verifique su API Key.";
+      }
+
+    } catch (error) {
+      resumenOutput.innerText = "❌ Error de conexión: " + error.message;
+    }
   }
 
-  // 4. CAPTURA Y COMPRESIÓN DE IMÁGENES
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // 4. CAPTURA Y COMPRESIÓN DE FOTOS CON CANVAS (< 200 KB)
   function procesarImagen(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -187,7 +244,6 @@
       img.src = event.target.result;
       
       img.onload = function() {
-        // Redimensionar e comprimir usando Canvas
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 1000;
         const scaleSize = MAX_WIDTH / img.width;
@@ -197,23 +253,94 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        // Exportar como JPEG comprimido a calidad 0.7 (Peso < 200 KB)
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        // Compresión a JPEG calidad 0.7
+        imagenComprimidaBase64 = canvas.toDataURL('image/jpeg', 0.7);
         
-        // Mostrar vista previa
         const preview = document.getElementById('imgPreview');
-        preview.src = compressedDataUrl;
+        preview.src = imagenComprimidaBase64;
         preview.classList.remove('hidden');
         
-        const sizeKB = Math.round((compressedDataUrl.length * 3 / 4) / 1024);
-        document.getElementById('imgInfo').innerText = `Imagen optimizada: ~${sizeKB} KB (Lista para subir a Drive)`;
+        const sizeKB = Math.round((imagenComprimidaBase64.length * 3 / 4) / 1024);
+        document.getElementById('imgInfo').innerText = `Imagen comprimida lista: ~${sizeKB} KB`;
       }
     };
     reader.readAsDataURL(file);
   }
 
+  // 5. GENERACIÓN DE RECETA PDF CON jsPDF
   function generarDocumentoPDF() {
-    alert("Generando PDF liviano con datos del médico (" + usuarioActivo.nombre + ") y enviado por email...");
+    const { jsPDF } = window.jspdf;
+    if (!jsPDF) {
+      alert("Error cargando la librería de PDF.");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+    const fecha = new Date().toLocaleDateString('es-ES');
+
+    // Encabezado
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(2, 132, 199);
+    doc.text(usuarioActivo.nombre, 15, 20);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Especialidad: ${usuarioActivo.especialidad}`, 15, 25);
+    doc.text(`Matrícula: ${usuarioActivo.matricula}`, 15, 29);
+    doc.text(`Fecha: ${fecha}`, 105, 20);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, 33, 133, 33);
+
+    // Paciente
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text("RECETA MÉDICA / INDICACIONES", 15, 42);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(2, 132, 199);
+    doc.text("Rp /", 15, 52);
+
+    // Prescripción
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+
+    const prescripcion = [
+      "1. Paracetamol 120 mg / 5 ml - Jarabe",
+      "   Tomar 3.5 ml cada 8 hs en caso de fiebre.",
+      "",
+      "2. Solución Fisiológica Nasal",
+      "   Aplicar 2 gotas en cada narina cada 12 hs."
+    ];
+
+    let y = 60;
+    prescripcion.forEach(line => {
+      doc.text(line, 15, y);
+      y += 5;
+    });
+
+    // Firma
+    doc.setLineWidth(0.3);
+    doc.line(85, 180, 133, 180);
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Firma y Sello del Profesional", 88, 184);
+
+    doc.save(`Receta_${fecha.replace(/\//g, '-')}.pdf`);
+  }
+
+  // REGISTRO DE SERVICE WORKER PARA PWA
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('SW activo:', reg.scope))
+        .catch(err => console.error('Error SW:', err));
+    });
   }
 </script>
 
