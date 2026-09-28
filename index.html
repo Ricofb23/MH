@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>HCE Móvil Asistida por IA</title>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; }
+    body { background-color: var(--bg); color: var(--text); padding: 15px; }
+    .container { max-width: 500px; margin: 0 auto; }
+    .card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    h2, h3 { margin-bottom: 15px; }
+    .hidden { display: none !important; }
+    input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
+    button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
+    button:active { background: var(--primary-dark); }
+    .btn-danger { background: var(--danger); }
+    .timer { font-size: 28px; font-weight: bold; text-align: center; color: var(--danger); margin: 10px 0; }
+    .preview-img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; margin-top: 10px; }
+    #resumenOutput { white-space: pre-wrap; background: #f1f5f9; padding: 12px; border-radius: 8px; font-size: 14px; max-height: 250px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 1. PANTALLA DE LOGIN -->
+  <div id="loginScreen" class="card">
+    <h2>Inicio de Sesión Médico</h2>
+    <input type="email" id="loginEmail" placeholder="Correo electrónico" value="dr.gomez@clinica.com">
+    <input type="password" id="loginPass" placeholder="Contraseña" value="123456">
+    <button onclick="iniciarSesion()">Ingresar</button>
+  </div>
+
+  <!-- 2. PANTALLA PRINCIPAL (CONSULTA) -->
+  <div id="appScreen" class="card hidden">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+      <div>
+        <h3 id="userGreeting" style="margin:0;">Bienvenido</h3>
+        <small id="userSpecialty" style="color:#64748b;">Especialidad: -</small>
+      </div>
+      <button onclick="cerrarSesion()" style="width:auto; padding:6px 12px; font-size:12px;" class="btn-danger">Salir</button>
+    </div>
+
+    <hr style="margin-bottom:15px; border:none; border-top:1px solid #e2e8f0;">
+
+    <!-- Módulo de Grabación de Audio -->
+    <div style="text-align:center;">
+      <h3>Grabación de Consulta (10 min)</h3>
+      <div id="recordingTimer" class="timer hidden">00:00</div>
+      <button id="btnStartRecord" onclick="iniciarGrabacion()">🎙️ Iniciar Grabación</button>
+      <button id="btnStopRecord" onclick="detenerGrabacion()" class="btn-danger hidden">⏹️ Detener y Procesar con IA</button>
+    </div>
+
+    <!-- Módulo de Captura de Fotos -->
+    <div style="margin-top:20px;">
+      <h3>Adjuntar Foto / Estudio</h3>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="procesarImagen(event)">
+      <img id="imgPreview" class="preview-img hidden" alt="Vista previa">
+      <small id="imgInfo" style="color:#64748b;"></small>
+    </div>
+
+    <!-- Módulo de Resultados de la IA -->
+    <div id="resultSection" class="hidden" style="margin-top:20px;">
+      <h3>Resumen Estructurado (IA)</h3>
+      <div id="resumenOutput">Procesando audio...</div>
+      <button style="margin-top:10px; background:#10b981;" onclick="generarDocumentoPDF()">📄 Generar Receta / Orden en PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // SIMULACIÓN DE BASE DE DATOS DE USUARIOS Y PLANTILLAS
+  const usuariosDB = {
+    "dr.gomez@clinica.com": {
+      nombre: "Dr. Juan Gómez",
+      especialidad: "Pediatría",
+      prompt: "Extrae: Acompañante, Lactancia/Alimentación, Curvas de peso/talla dictadas, Vacunas, Examen pediátrico, Dosis por kg y Pautas de alarma."
+    },
+    "dra.martinez@clinica.com": {
+      nombre: "Dra. María Martínez",
+      especialidad: "Odontología",
+      prompt: "Extrae: Piezas dentales afectadas, Sintomatología, Procedimiento realizado en sillón y Plan de tratamiento."
+    }
+  };
+
+  let usuarioActivo = null;
+  let mediaRecorder;
+  let audioChunks = [];
+  let timerInterval;
+  let segundos = 0;
+
+  // 1. GESTIÓN DE SESIÓN
+  function iniciarSesion() {
+    const email = document.getElementById('loginEmail').value;
+    if (usuariosDB[email]) {
+      usuarioActivo = usuariosDB[email];
+      document.getElementById('userGreeting').innerText = usuarioActivo.nombre;
+      document.getElementById('userSpecialty').innerText = `Especialidad: ${usuarioActivo.especialidad}`;
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appScreen').classList.remove('hidden');
+    } else {
+      alert("Usuario no encontrado. Prueba con: dr.gomez@clinica.com");
+    }
+  }
+
+  function cerrarSesion() {
+    usuarioActivo = null;
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('appScreen').classList.add('hidden');
+  }
+
+  // 2. CAPTURA Y GRABACIÓN DE AUDIO TEMPORAL
+  async function iniciarGrabacion() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+      mediaRecorder.onstop = procesarAudioConIA;
+
+      mediaRecorder.start();
+      
+      // UI Updates
+      document.getElementById('btnStartRecord').classList.add('hidden');
+      document.getElementById('btnStopRecord').classList.remove('hidden');
+      document.getElementById('recordingTimer').classList.remove('hidden');
+      
+      segundos = 0;
+      timerInterval = setInterval(() => {
+        segundos++;
+        let min = String(Math.floor(segundos / 60)).padStart(2, '0');
+        let sec = String(segundos % 60).padStart(2, '0');
+        document.getElementById('recordingTimer').innerText = `${min}:${sec}`;
+      }, 1000);
+
+    } catch (err) {
+      alert("Error al acceder al micrófono: " + err.message);
+    }
+  }
+
+  function detenerGrabacion() {
+    mediaRecorder.stop();
+    clearInterval(timerInterval);
+    document.getElementById('btnStartRecord').classList.remove('hidden');
+    document.getElementById('btnStopRecord').classList.add('hidden');
+    document.getElementById('recordingTimer').classList.add('hidden');
+  }
+
+  // 3. ENVÍO DEL AUDIO + PROMPT DE ESPECIALIDAD A LA IA
+  function procesarAudioConIA() {
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    document.getElementById('resultSection').classList.remove('hidden');
+    document.getElementById('resumenOutput').innerText = "Enviando audio temporal a la IA...\nAplicando plantilla de: " + usuarioActivo.especialidad;
+
+    // SIMULACIÓN DE RESPUESTA DE LA API (Gemini Flash)
+    setTimeout(() => {
+      document.getElementById('resumenOutput').innerText = 
+        `=== RESUMEN DE CONSULTA (${usuarioActivo.especialidad.toUpperCase()}) ===\n\n` +
+        `• Paciente: Mateo Pérez (4 años)\n` +
+        `• Motivo: Fiebre y tos de 48 hs de evolución.\n` +
+        `• Examen Físico: Faringe congestiva. Auscultación pulmonar normal.\n` +
+        `• Diagnóstico: Cuadro viral de vías aéreas superiores.\n` +
+        `• Indicaciones: Paracetamol 120mg/5ml (3.5 ml cada 8 hs si hay fiebre).\n` +
+        `• Pautas de Alarma: Consultar si presenta dificultad para respirar o fiebre > 39°C.`;
+    }, 2500);
+  }
+
+  // 4. CAPTURA Y COMPRESIÓN DE IMÁGENES
+  function procesarImagen(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      const img = new Image();
+      img.src = event.target.result;
+      
+      img.onload = function() {
+        // Redimensionar e comprimir usando Canvas
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Exportar como JPEG comprimido a calidad 0.7 (Peso < 200 KB)
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        
+        // Mostrar vista previa
+        const preview = document.getElementById('imgPreview');
+        preview.src = compressedDataUrl;
+        preview.classList.remove('hidden');
+        
+        const sizeKB = Math.round((compressedDataUrl.length * 3 / 4) / 1024);
+        document.getElementById('imgInfo').innerText = `Imagen optimizada: ~${sizeKB} KB (Lista para subir a Drive)`;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function generarDocumentoPDF() {
+    alert("Generando PDF liviano con datos del médico (" + usuarioActivo.nombre + ") y enviado por email...");
+  }
+</script>
+
+</body>
+</html>
