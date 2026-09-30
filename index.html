@@ -100,7 +100,7 @@
       nombre: "Dr. Juan Gómez",
       especialidad: "Clínica Médica",
       matricula: "MP-48201",
-      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes personales y patológicos, Signos vitales dictados, Examen físico por sistemas, Diagnóstico presuntivo/definitivo y Plan de tratamiento / Solicitud de estudios."
+      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes patológicos, Medicación Habitual, Alergias / Reacciones Adversas a Medicamentos (RAM), Signos vitales dictados, Examen físico por sistemas, Diagnóstico presuntivo/definitivo y Plan de tratamiento / Solicitud de estudios."
     },
     "dra.martinez@clinica.com": {
       nombre: "Dra. María Martínez",
@@ -109,6 +109,7 @@
       prompt: "Extrae: Piezas dentales afectadas, Motivo de consulta, Sintomatología, Procedimiento en sillón y Plan de tratamiento."
     }
   };
+
   let usuarioActivo = null;
   let mediaRecorder;
   let audioChunks = [];
@@ -173,7 +174,7 @@
     document.getElementById('recordingTimer').classList.add('hidden');
   }
 
-  // 3. ENVÍO DEL AUDIO A GEMINI 2.5 FLASH VIA POST
+  // 3. ENVÍO DEL AUDIO A GEMINI 3.8 FLASH VIA POST CON REINTENTO AUTOMÁTICO
   async function procesarAudioConIA() {
     const apiKey = document.getElementById('apiKeyInput').value.trim();
     const resumenOutput = document.getElementById('resumenOutput');
@@ -195,7 +196,7 @@
 Especialidad médica: ${usuarioActivo.especialidad}
 Parámetros a extraer: ${usuarioActivo.prompt}
 
-Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen Físico, Diagnóstico e Indicaciones.`;
+Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicación Habitual, Alergias, Examen Físico, Diagnóstico e Indicaciones.`;
 
       const bodyData = {
         contents: [{
@@ -206,11 +207,21 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
         }]
       };
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyData)
       });
+
+      // Si el servidor de Google devuelve sobrecarga (503), probamos con el modelo de respaldo
+      if (response.status === 503 || response.status === 429) {
+        resumenOutput.innerText = "⏳ Servidor ocupado, reintentando con modelo de respaldo...";
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyData)
+        });
+      }
 
       const data = await response.json();
 
@@ -227,6 +238,7 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
       console.error("Error de red:", error);
     }
   }
+
   function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -235,21 +247,7 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
       reader.readAsDataURL(blob);
     });
   }
-    let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData)
-      });
 
-      // Si el servidor de Google está saturado (503), probamos con el modelo de respaldo
-      if (response.status === 503 || response.status === 429) {
-        resumenOutput.innerText = "⏳ Servidor ocupado, reintentando con modelo de respaldo...";
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyData)
-        });
-      }
   // 4. CAPTURA Y COMPRESIÓN DE FOTOS
   function procesarImagen(e) {
     const file = e.target.files[0];
@@ -283,11 +281,18 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
     reader.readAsDataURL(file);
   }
 
-  // 5. GENERACIÓN DE RECETA PDF CON jsPDF
+  // 5. GENERACIÓN DE RECETA / RESUMEN CLÍNICO DINÁMICO CON jsPDF
   function generarDocumentoPDF() {
     const { jsPDF } = window.jspdf;
     if (!jsPDF) {
       alert("Error cargando la librería de PDF.");
+      return;
+    }
+
+    const textoResumen = document.getElementById('resumenOutput').innerText;
+
+    if (!textoResumen || textoResumen.includes("Esperando audio...") || textoResumen.includes("❌")) {
+      alert("Primero debes procesar una consulta con la IA antes de generar el PDF.");
       return;
     }
 
@@ -310,40 +315,24 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
     doc.line(15, 33, 133, 33);
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
-    doc.text("RECETA MÉDICA / INDICACIONES", 15, 42);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(2, 132, 199);
-    doc.text("Rp /", 15, 52);
+    doc.text("RESUMEN DE CONSULTA / INDICACIONES", 15, 42);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
 
-    const prescripcion = [
-      "1. Paracetamol 120 mg / 5 ml - Jarabe",
-      "   Tomar 3.5 ml cada 8 hs en caso de fiebre.",
-      "",
-      "2. Solución Fisiológica Nasal",
-      "   Aplicar 2 gotas en cada narina cada 12 hs."
-    ];
-
-    let y = 60;
-    prescripcion.forEach(line => {
-      doc.text(line, 15, y);
-      y += 5;
-    });
+    const lineasTexto = doc.splitTextToSize(textoResumen, 118);
+    doc.text(lineasTexto, 15, 50);
 
     doc.setLineWidth(0.3);
-    doc.line(85, 180, 133, 180);
+    doc.line(85, 190, 133, 190);
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text("Firma y Sello del Profesional", 88, 184);
+    doc.text("Firma y Sello del Profesional", 88, 194);
 
-    doc.save(`Receta_${fecha.replace(/\//g, '-')}.pdf`);
+    doc.save(`Consulta_${usuarioActivo.especialidad}_${fecha.replace(/\//g, '-')}.pdf`);
   }
 
   // SERVICE WORKER
