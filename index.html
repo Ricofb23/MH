@@ -179,7 +179,7 @@
     }
 
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    resumenOutput.innerText = `⏳ Procesando audio con Gemini 1.5 Flash...\nAplicando perfil: ${usuarioActivo.especialidad}`;
+    resumenOutput.innerText = `⏳ Procesando audio con Gemini 3.8 Flash...\nAplicando perfil: ${usuarioActivo.especialidad}`;
 
     try {
       const base64Audio = await blobToBase64(audioBlob);
@@ -200,8 +200,8 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
         }]
       };
 
-      // Modelo oficial y compatible: gemini-1.5-flash
-      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      // Llamada única y directa al modelo 3.8 Flash actual
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyData)
