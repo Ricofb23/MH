@@ -236,7 +236,21 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Examen 
       reader.readAsDataURL(blob);
     });
   }
+    let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData)
+      });
 
+      // Si el servidor de Google está saturado (503), probamos con el modelo de respaldo
+      if (response.status === 503 || response.status === 429) {
+        resumenOutput.innerText = "⏳ Servidor ocupado, reintentando con modelo de respaldo...";
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyData)
+        });
+      }
   // 4. CAPTURA Y COMPRESIÓN DE FOTOS
   function procesarImagen(e) {
     const file = e.target.files[0];
