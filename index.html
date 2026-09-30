@@ -4,16 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>HCE Móvil - Asistente IA</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0284c7">
-  
-  <!-- Librería jsPDF para generación de PDFs en el cliente -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
     :root {
       --primary: #0284c7;
-      --primary-dark: #0369a1;
       --bg: #f8fafc;
       --card: #ffffff;
       --text: #0f172a;
@@ -27,8 +22,7 @@
     h2, h3 { margin-bottom: 15px; }
     .hidden { display: none !important; }
     input, select, button, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
-    button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; }
-    button:active { background: var(--primary-dark); }
+    button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
     .btn-danger { background: var(--danger); }
     .btn-success { background: var(--success); }
     .timer { font-size: 28px; font-weight: bold; text-align: center; color: var(--danger); margin: 10px 0; }
@@ -40,67 +34,61 @@
 
 <div class="container">
 
-  <!-- 1. PANTALLA DE LOGIN -->
+  <!-- 1. LOGIN -->
   <div id="loginScreen" class="card">
     <h2>HCE Móvil IA</h2>
     <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">Inicia sesión con tu cuenta profesional</p>
     <input type="email" id="loginEmail" placeholder="Correo electrónico" value="dr.gomez@clinica.com">
     <input type="password" id="loginPass" placeholder="Contraseña" value="123456">
-    <button onclick="iniciarSesion()">Ingresar al Sistema</button>
+    <button type="button" id="btnLogin">Ingresar al Sistema</button>
   </div>
 
-  <!-- 2. PANTALLA PRINCIPAL (CONSULTA MÉDICA) -->
+  <!-- 2. PANTALLA PRINCIPAL -->
   <div id="appScreen" class="card hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <div>
         <h3 id="userGreeting" style="margin:0;">Bienvenido</h3>
         <small id="userSpecialty" style="color:#64748b;">Especialidad: -</small>
       </div>
-      <button onclick="cerrarSesion()" style="width:auto; padding:6px 12px; font-size:12px;" class="btn-danger">Salir</button>
+      <button type="button" id="btnLogout" style="width:auto; padding:6px 12px; font-size:12px;" class="btn-danger">Salir</button>
     </div>
 
-    <!-- Clave API de Gemini -->
     <div style="margin-bottom: 15px;">
       <input type="password" id="apiKeyInput" placeholder="Clave API de Gemini (AI Studio)" style="font-size: 12px; padding: 8px;">
     </div>
 
     <hr style="margin-bottom:15px; border:none; border-top:1px solid #e2e8f0;">
 
-    <!-- Módulo de Grabación de Audio -->
     <div style="text-align:center;">
       <h3>Grabación de Consulta</h3>
       <div id="recordingTimer" class="timer hidden">00:00</div>
-      <button id="btnStartRecord" onclick="iniciarGrabacion()">🎙️ Iniciar Grabación de Consulta</button>
-      <button id="btnStopRecord" onclick="detenerGrabacion()" class="btn-danger hidden">⏹️ Detener y Procesar con IA</button>
+      <button type="button" id="btnStartRecord">🎙️️ Iniciar Grabación de Consulta</button>
+      <button type="button" id="btnStopRecord" class="btn-danger hidden">⏹️ Detener y Procesar con IA</button>
     </div>
 
-    <!-- Módulo de Captura de Fotos / Estudios -->
     <div style="margin-top:20px;">
       <h3>Adjuntar Estudio / Foto</h3>
-      <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="procesarImagen(event)">
+      <input type="file" id="cameraInput" accept="image/*" capture="environment">
       <img id="imgPreview" class="preview-img hidden" alt="Vista previa">
       <small id="imgInfo" style="color:#64748b;"></small>
     </div>
 
-    <!-- Módulo de Resultados de la IA -->
     <div id="resultSection" class="hidden" style="margin-top:20px;">
       <h3>Resumen Clínico (IA)</h3>
       <div id="resumenOutput">Esperando audio...</div>
-      
-      <button style="margin-top:15px;" class="btn-success" onclick="generarDocumentoPDF()">📄 Generar Receta / Orden Médica (PDF)</button>
+      <button type="button" id="btnPdf" style="margin-top:15px;" class="btn-success">📄 Generar Receta / Orden Médica (PDF)</button>
     </div>
   </div>
 
 </div>
 
 <script>
-  // BD DE PRUEBA
   const usuariosDB = {
     "dr.gomez@clinica.com": {
       nombre: "Dr. Juan Gómez",
       especialidad: "Clínica Médica",
       matricula: "MP-48201",
-      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes patológicos, Medicación Habitual, Alergias / Reacciones Adversas a Medicamentos (RAM), Signos vitales dictados, Examen físico por sistemas, Diagnóstico presuntivo/definitivo y Plan de tratamiento / Solicitud de estudios."
+      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes patológicos, Medicación Habitual, Alergias / RAM, Signos vitales dictados, Examen físico por sistemas, Diagnóstico e Indicaciones."
     },
     "dra.martinez@clinica.com": {
       nombre: "Dra. María Martínez",
@@ -111,15 +99,22 @@
   };
 
   let usuarioActivo = null;
-  let mediaRecorder;
+  let mediaRecorder = null;
   let audioChunks = [];
-  let timerInterval;
+  let timerInterval = null;
   let segundos = 0;
-  let imagenComprimidaBase64 = null;
 
-  // 1. INICIO DE SESIÓN
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('btnLogin').addEventListener('click', iniciarSesion);
+    document.getElementById('btnLogout').addEventListener('click', cerrarSesion);
+    document.getElementById('btnStartRecord').addEventListener('click', iniciarGrabacion);
+    document.getElementById('btnStopRecord').addEventListener('click', detenerGrabacion);
+    document.getElementById('cameraInput').addEventListener('change', procesarImagen);
+    document.getElementById('btnPdf').addEventListener('click', generarDocumentoPDF);
+  });
+
   function iniciarSesion() {
-    const email = document.getElementById('loginEmail').value;
+    const email = document.getElementById('loginEmail').value.trim();
     if (usuariosDB[email]) {
       usuarioActivo = usuariosDB[email];
       document.getElementById('userGreeting').innerText = usuarioActivo.nombre;
@@ -137,7 +132,6 @@
     document.getElementById('appScreen').classList.add('hidden');
   }
 
-  // 2. GRABACIÓN DE AUDIO
   async function iniciarGrabacion() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -167,14 +161,13 @@
   }
 
   function detenerGrabacion() {
-    mediaRecorder.stop();
+    if (mediaRecorder) mediaRecorder.stop();
     clearInterval(timerInterval);
     document.getElementById('btnStartRecord').classList.remove('hidden');
     document.getElementById('btnStopRecord').classList.add('hidden');
     document.getElementById('recordingTimer').classList.add('hidden');
   }
 
-  // 3. ENVÍO DEL AUDIO A GEMINI 3.8 FLASH VIA POST CON REINTENTO AUTOMÁTICO
   async function procesarAudioConIA() {
     const apiKey = document.getElementById('apiKeyInput').value.trim();
     const resumenOutput = document.getElementById('resumenOutput');
@@ -186,7 +179,7 @@
     }
 
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    resumenOutput.innerText = `⏳ Procesando audio con Gemini 3.8 Flash...\nAplicando perfil: ${usuarioActivo.especialidad}`;
+    resumenOutput.innerText = `⏳ Procesando audio con Gemini 1.5 Flash...\nAplicando perfil: ${usuarioActivo.especialidad}`;
 
     try {
       const base64Audio = await blobToBase64(audioBlob);
@@ -207,21 +200,12 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
         }]
       };
 
-      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+      // Modelo oficial y compatible: gemini-1.5-flash
+      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyData)
       });
-
-      // Si el servidor de Google devuelve sobrecarga (503), probamos con el modelo de respaldo
-      if (response.status === 503 || response.status === 429) {
-        resumenOutput.innerText = "⏳ Servidor ocupado, reintentando con modelo de respaldo...";
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyData)
-        });
-      }
 
       const data = await response.json();
 
@@ -230,12 +214,10 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
       } else {
         const detalleError = data.error ? `${data.error.status} - ${data.error.message}` : JSON.stringify(data);
         resumenOutput.innerText = `❌ Error de la API (${response.status}):\n${detalleError}`;
-        console.error("Detalle técnico del error:", data);
       }
 
     } catch (error) {
       resumenOutput.innerText = "❌ Error de conexión/red: " + error.message;
-      console.error("Error de red:", error);
     }
   }
 
@@ -248,7 +230,6 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
     });
   }
 
-  // 4. CAPTURA Y COMPRESIÓN DE FOTOS
   function procesarImagen(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -257,7 +238,6 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
     reader.onload = function(event) {
       const img = new Image();
       img.src = event.target.result;
-      
       img.onload = function() {
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 1000;
@@ -268,31 +248,25 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        imagenComprimidaBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        
+        const imgData = canvas.toDataURL('image/jpeg', 0.7);
         const preview = document.getElementById('imgPreview');
-        preview.src = imagenComprimidaBase64;
+        preview.src = imgData;
         preview.classList.remove('hidden');
         
-        const sizeKB = Math.round((imagenComprimidaBase64.length * 3 / 4) / 1024);
-        document.getElementById('imgInfo').innerText = `Imagen comprimida lista: ~${sizeKB} KB`;
+        const sizeKB = Math.round((imgData.length * 3 / 4) / 1024);
+        document.getElementById('imgInfo').innerText = `Imagen comprimida: ~${sizeKB} KB`;
       }
     };
     reader.readAsDataURL(file);
   }
 
-  // 5. GENERACIÓN DE RECETA / RESUMEN CLÍNICO DINÁMICO CON jsPDF
   function generarDocumentoPDF() {
     const { jsPDF } = window.jspdf;
-    if (!jsPDF) {
-      alert("Error cargando la librería de PDF.");
-      return;
-    }
+    if (!jsPDF) { alert("Error cargando jsPDF."); return; }
 
     const textoResumen = document.getElementById('resumenOutput').innerText;
-
     if (!textoResumen || textoResumen.includes("Esperando audio...") || textoResumen.includes("❌")) {
-      alert("Primero debes procesar una consulta con la IA antes de generar el PDF.");
+      alert("Procesa una consulta antes de generar el PDF.");
       return;
     }
 
@@ -332,16 +306,7 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
     doc.setTextColor(100, 116, 139);
     doc.text("Firma y Sello del Profesional", 88, 194);
 
-    doc.save(`Consulta_${usuarioActivo.especialidad}_${fecha.replace(/\//g, '-')}.pdf`);
-  }
-
-  // SERVICE WORKER
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(reg => console.log('SW activo:', reg.scope))
-        .catch(err => console.error('Error SW:', err));
-    });
+    doc.save(`Consulta_${fecha.replace(/\//g, '-')}.pdf`);
   }
 </script>
 
