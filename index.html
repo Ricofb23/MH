@@ -98,9 +98,9 @@
   const usuariosDB = {
     "dr.gomez@clinica.com": {
       nombre: "Dr. Juan Gómez",
-      especialidad: "Pediatría",
+      especialidad: "Clínica Médica",
       matricula: "MP-48201",
-      prompt: "Extrae: Acompañante, Alimentación/Lactancia, Curvas de crecimiento dictadas, Vacunas, Examen físico pediátrico, Diagnóstico e Indicaciones."
+      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes personales y patológicos, Signos vitales dictados, Examen físico por sistemas, Diagnóstico presuntivo/definitivo y Plan de tratamiento / Solicitud de estudios."
     },
     "dra.martinez@clinica.com": {
       nombre: "Dra. María Martínez",
@@ -109,7 +109,6 @@
       prompt: "Extrae: Piezas dentales afectadas, Motivo de consulta, Sintomatología, Procedimiento en sillón y Plan de tratamiento."
     }
   };
-
   let usuarioActivo = null;
   let mediaRecorder;
   let audioChunks = [];
