@@ -81,95 +81,24 @@
   </div>
 
 </div>
-
 <script>
-  const usuariosDB = {
-    "dr.gomez@clinica.com": {
-      nombre: "Dr. Juan Gómez",
-      especialidad: "Clínica Médica",
-      matricula: "MP-48201",
-      prompt: "Extrae: Motivo de consulta, Anamnesis / Antecedentes patológicos, Medicación Habitual, Alergias / RAM, Signos vitales dictados, Examen físico por sistemas, Diagnóstico e Indicaciones."
-    },
-    "dra.martinez@clinica.com": {
-      nombre: "Dra. María Martínez",
-      especialidad: "Odontología",
-      matricula: "MN-12904",
-      prompt: "Extrae: Piezas dentales afectadas, Motivo de consulta, Sintomatología, Procedimiento en sillón y Plan de tratamiento."
+  // Cargar clave guardada en localStorage apenas abre la app
+  document.addEventListener("DOMContentLoaded", () => {
+    const savedKey = localStorage.getItem("groq_api_key");
+    if (savedKey) {
+      document.getElementById("apiKeyInput").value = savedKey;
     }
-  };
 
-  let usuarioActivo = null;
-  let mediaRecorder = null;
-  let audioChunks = [];
-  let timerInterval = null;
-  let segundos = 0;
-
-  document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('btnLogin').addEventListener('click', iniciarSesion);
-    document.getElementById('btnLogout').addEventListener('click', cerrarSesion);
-    document.getElementById('btnStartRecord').addEventListener('click', iniciarGrabacion);
-    document.getElementById('btnStopRecord').addEventListener('click', detenerGrabacion);
-    document.getElementById('cameraInput').addEventListener('change', procesarImagen);
-    document.getElementById('btnPdf').addEventListener('click', generarDocumentoPDF);
+    // Escuchar cuando el usuario escribe en la casilla para auto-guardar
+    document.getElementById("apiKeyInput").addEventListener("input", (e) => {
+      const keyVal = e.target.value.trim();
+      localStorage.setItem("groq_api_key", keyVal);
+    });
   });
 
-  function iniciarSesion() {
-    const email = document.getElementById('loginEmail').value.trim();
-    if (usuariosDB[email]) {
-      usuarioActivo = usuariosDB[email];
-      document.getElementById('userGreeting').innerText = usuarioActivo.nombre;
-      document.getElementById('userSpecialty').innerText = `Especialidad: ${usuarioActivo.especialidad} (${usuarioActivo.matricula})`;
-      document.getElementById('loginScreen').classList.add('hidden');
-      document.getElementById('appScreen').classList.remove('hidden');
-    } else {
-      alert("Usuario no registrado. Usa: dr.gomez@clinica.com");
-    }
-  }
-
-  function cerrarSesion() {
-    usuarioActivo = null;
-    document.getElementById('loginScreen').classList.remove('hidden');
-    document.getElementById('appScreen').classList.add('hidden');
-  }
-
-  async function iniciarGrabacion() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-      mediaRecorder.onstop = procesarAudioConIA;
-
-      mediaRecorder.start();
-      
-      document.getElementById('btnStartRecord').classList.add('hidden');
-      document.getElementById('btnStopRecord').classList.remove('hidden');
-      document.getElementById('recordingTimer').classList.remove('hidden');
-      
-      segundos = 0;
-      timerInterval = setInterval(() => {
-        segundos++;
-        let min = String(Math.floor(segundos / 60)).padStart(2, '0');
-        let sec = String(segundos % 60).padStart(2, '0');
-        document.getElementById('recordingTimer').innerText = `${min}:${sec}`;
-      }, 1000);
-
-    } catch (err) {
-      alert("Error al acceder al micrófono: " + err.message);
-    }
-  }
-
-  function detenerGrabacion() {
-    if (mediaRecorder) mediaRecorder.stop();
-    clearInterval(timerInterval);
-    document.getElementById('btnStartRecord').classList.remove('hidden');
-    document.getElementById('btnStopRecord').classList.add('hidden');
-    document.getElementById('recordingTimer').classList.add('hidden');
-  }
-
-async function procesarAudioConIA() {
-    const apiKey = document.getElementById('apiKeyInput').value.trim();
+  async function procesarAudioConIA() {
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const apiKey = apiKeyInput.value.trim();
     const resumenOutput = document.getElementById('resumenOutput');
     document.getElementById('resultSection').classList.remove('hidden');
 
@@ -183,6 +112,9 @@ async function procesarAudioConIA() {
       return;
     }
 
+    // Aseguramos que quede guardada en el navegador
+    localStorage.setItem("groq_api_key", apiKey);
+
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
     
     try {
@@ -192,7 +124,7 @@ async function procesarAudioConIA() {
       const formData = new FormData();
       formData.append('file', audioBlob, 'consulta.webm');
       formData.append('model', 'whisper-large-v3-turbo');
-      formData.append('language', 'es'); // Fuerza español
+      formData.append('language', 'es');
       formData.append('response_format', 'json');
 
       const transRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -249,100 +181,11 @@ Instrucciones: Usa formato Markdown profesional con negritas y viñetas. Incluye
       const llamaData = await llamaRes.json();
       const resumenFinal = llamaData.choices[0].message.content;
 
-      // Mostramos el resumen final
       resumenOutput.innerText = resumenFinal;
 
     } catch (error) {
       resumenOutput.innerText = "❌ Error en el proceso: " + error.message;
     }
-  }
-  
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function procesarImagen(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(event) {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = function() {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1000;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.7);
-        const preview = document.getElementById('imgPreview');
-        preview.src = imgData;
-        preview.classList.remove('hidden');
-        
-        const sizeKB = Math.round((imgData.length * 3 / 4) / 1024);
-        document.getElementById('imgInfo').innerText = `Imagen comprimida: ~${sizeKB} KB`;
-      }
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function generarDocumentoPDF() {
-    const { jsPDF } = window.jspdf;
-    if (!jsPDF) { alert("Error cargando jsPDF."); return; }
-
-    const textoResumen = document.getElementById('resumenOutput').innerText;
-    if (!textoResumen || textoResumen.includes("Esperando audio...") || textoResumen.includes("❌")) {
-      alert("Procesa una consulta antes de generar el PDF.");
-      return;
-    }
-
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
-    const fecha = new Date().toLocaleDateString('es-ES');
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(2, 132, 199);
-    doc.text(usuarioActivo.nombre, 15, 20);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Especialidad: ${usuarioActivo.especialidad}`, 15, 25);
-    doc.text(`Matrícula: ${usuarioActivo.matricula}`, 15, 29);
-    doc.text(`Fecha: ${fecha}`, 105, 20);
-
-    doc.setDrawColor(226, 232, 240);
-    doc.line(15, 33, 133, 33);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text("RESUMEN DE CONSULTA / INDICACIONES", 15, 42);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 41, 59);
-
-    const lineasTexto = doc.splitTextToSize(textoResumen, 118);
-    doc.text(lineasTexto, 15, 50);
-
-    doc.setLineWidth(0.3);
-    doc.line(85, 190, 133, 190);
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text("Firma y Sello del Profesional", 88, 194);
-
-    doc.save(`Consulta_${fecha.replace(/\//g, '-')}.pdf`);
   }
 </script>
 
