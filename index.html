@@ -244,7 +244,7 @@ Instrucciones: Usa formato claro con viñetas. Incluye secciones: Motivo de cons
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama3-70b-8192',
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: promptSistema },
             { role: 'user', content: `Transcripción del audio de la consulta:\n"${transcripcionTexto}"` }
