@@ -179,7 +179,7 @@
     }
 
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    resumenOutput.innerText = `⏳ Procesando audio...\nAplicando perfil: ${usuarioActivo.especialidad}`;
+    resumenOutput.innerText = `⏳ Procesando audio con la API de Google...\nAplicando perfil: ${usuarioActivo.especialidad}`;
 
     try {
       const base64Audio = await blobToBase64(audioBlob);
@@ -200,36 +200,47 @@ Escribe en formato profesional con viñetas. Incluye: Motivo, Anamnesis, Medicac
         }]
       };
 
-      // Endpoint v1 universal compatible con todas las claves nuevas (AQ... y AIza...)
-      let response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData)
-      });
+      // Intentamos con la lista de endpoints compatibles
+      const modelosAProbar = [
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash"
+      ];
 
-      // Si la versión v1 responde 404, intenta automáticamente con el endpoint alternativo v1beta
-      if (response.status === 404) {
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyData)
-        });
+      let response = null;
+      let ultimoError = "";
+
+      for (const modelo of modelosAProbar) {
+        try {
+          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyData)
+          });
+
+          if (response.ok) break; // Si responde 200 OK, salimos del bucle
+          
+          const errData = await response.json();
+          ultimoError = `Modelo ${modelo}: ${response.status} - ${errData.error?.message || 'Not Found'}`;
+        } catch (e) {
+          ultimoError = e.message;
+        }
       }
 
-      const data = await response.json();
-
-      if (response.ok && data.candidates && data.candidates[0] && data.candidates[0].content.parts[0].text) {
-        resumenOutput.innerText = data.candidates[0].content.parts[0].text;
-      } else {
-        const detalleError = data.error ? `${data.error.status} - ${data.error.message}` : JSON.stringify(data);
-        resumenOutput.innerText = `❌ Error de la API (${response.status}):\n${detalleError}`;
+      if (response && response.ok) {
+        const data = await response.json();
+        if (data.candidates && data.candidates[0] && data.candidates[0].content.parts[0].text) {
+          resumenOutput.innerText = data.candidates[0].content.parts[0].text;
+          return;
+        }
       }
+
+      resumenOutput.innerText = `❌ Error de conexión con Google API:\n${ultimoError}\n\nSugerencia: Verifica la URL del test de modelos o genera una clave directa en aistudio.google.com`;
 
     } catch (error) {
-      resumenOutput.innerText = "❌ Error de conexión/red: " + error.message;
+      resumenOutput.innerText = "❌ Error de red: " + error.message;
     }
   }
-
   function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
